@@ -1,0 +1,22 @@
+{
+  "name": "clawd-view",
+  "description": "Clawd View: a calm, plain-English view of Claude Code with a progress checklist and Clawd the mascot",
+  "owner": {
+    "name": "thedepegger",
+    "url": "https://github.com/thedepegger"
+  },
+  "plugins": [
+    {
+      "name": "clawd-view",
+      "source": "./",
+      "description": "A calm, plain-English view of Claude Code: a step-by-step checklist above the prompt, usage stats when there's room, and Clawd the pixel mascot acting out each step. Tool calls and commands stay out of sight.",
+      "category": "productivity",
+      "tags": [
+        "mod",
+        "checklist",
+        "mascot"
+      ],
+      "homepage": "https://github.com/thedepegger/clawd-view"
+    }
+  ]
+}

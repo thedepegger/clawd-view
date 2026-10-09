@@ -1,0 +1,64 @@
+{
+  "name": "clawd-view",
+  "displayName": "Clawd View",
+  "version": "1.2.3",
+  "description": "A calm, plain-English view of Claude Code: a step-by-step checklist above the prompt, usage stats when there's room, and Clawd the pixel mascot acting out each step. Tool calls and commands stay out of sight.",
+  "author": {
+    "name": "thedepegger",
+    "url": "https://github.com/thedepegger"
+  },
+  "homepage": "https://github.com/thedepegger/clawd-view",
+  "repository": "https://github.com/thedepegger/clawd-view",
+  "license": "MIT",
+  "keywords": [
+    "mod",
+    "checklist",
+    "progress",
+    "beginner",
+    "non-technical",
+    "mascot",
+    "clawd",
+    "usage",
+    "stats"
+  ],
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "language": {
+      "type": "string",
+      "title": "Language / 语言",
+      "description": "Language of the captions beside Clawd. auto follows your locale (LC_ALL, LC_MESSAGES, LANG): Chinese for zh_*, English otherwise. 小人旁边文字的语言,auto 跟随系统 locale。",
+      "options": [
+        "auto",
+        "zh",
+        "en"
+      ],
+      "default": "auto"
+    },
+    "chatModel": {
+      "type": "string",
+      "title": "Chat model / 聊天模型",
+      "description": "Which model answers when you chat with Clawd (/clawd chat, or switch with /clawd model). haiku, sonnet or opus get a copy of your conversation with Claude so far (the newest 40,000 characters or so); main forks the session's own conversation on its own model, with nothing cut. 和 Clawd 聊天时用哪个模型(也可以用 /clawd model 切换):haiku/sonnet/opus 会拿到你和 Claude 到目前为止的对话副本(最新的约 4 万字);main 分叉主会话,用主会话的模型,完整不截。",
+      "options": [
+        "haiku",
+        "sonnet",
+        "opus",
+        "main"
+      ],
+      "default": "haiku"
+    },
+    "chatEffort": {
+      "type": "string",
+      "title": "Chat effort / 聊天思考强度",
+      "description": "How hard the chat model thinks before Clawd answers (/clawd effort). default leaves it to the model; models without an effort setting ignore it, and main uses the session's own. 和 Clawd 聊天时模型的思考强度:default 交给模型自己决定;不支持的模型会忽略,main 沿用主会话的设置。",
+      "options": [
+        "default",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default": "default"
+    }
+  }
+}
