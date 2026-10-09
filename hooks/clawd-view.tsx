@@ -104,14 +104,30 @@ const FALLBACK_NAME = 'Working on it'
 const CARD_ORANGE = ORANGE
 // One hue: Clawd's orange (#e8714e, hue 13.6, saturation 77%), deepest to lightest. No pink.
 const SHADES = ['#e35126', '#e56038', '#e8714e', '#ea7d5d', '#ec8b6f', '#ef9a81']
-/** The title's color at letter i on frame f. One gentle wave of deep to light orange, about 48
- *  letters long, drifting along the title (one wave every 3.5 seconds): next letters and
- *  next frames differ by only a few shades, so the fade reads as smooth, never as steps. */
-function gradient(i: number, f: number): string {
-  const [a, b] = ['#e35126', '#ec8b6f'].map(h => [1, 3, 5].map(k => parseInt(h.slice(k, k + 2), 16)))
-  const t = (1 + Math.sin(2 * Math.PI * (i / 48 - f / 28))) / 2
-  const mix = t
-  return `#${a!.map((v, k) => Math.round(v + (b![k]! - v) * mix).toString(16).padStart(2, '0')).join('')}`
+const hexRgb = (h: string) => [1, 3, 5].map(k => parseInt(h.slice(k, k + 2), 16))
+const mixRgb = (a: number[], b: number[], t: number) => a.map((v, k) => Math.round(v + (b[k]! - v) * t))
+const rgbHex = (c: number[]) => `#${c.map(v => v.toString(16).padStart(2, '0')).join('')}`
+// A soft glow that sweeps across the title now and then: about 3 seconds to cross, then a rest
+export const GLOW_CYCLE = 24
+const GLOW_CROSS = 12
+const GLOW_COLOR = '#ffd6c4'
+const GLOW_MAX = 0.55
+/** How much of the glow letter i of an n-letter title gets on frame f: 0 to GLOW_MAX. */
+export function glowAt(i: number, f: number, n: number): number {
+  const step = ((f % GLOW_CYCLE) + GLOW_CYCLE) % GLOW_CYCLE
+  if (step >= GLOW_CROSS) return 0
+  // The glow's centre starts just before the first letter and ends just past the last
+  const head = -3 + (step / (GLOW_CROSS - 1)) * (n + 5)
+  return Math.max(0, 1 - Math.abs(i - head) / 3) * GLOW_MAX
+}
+/** The title's color at letter i of n on frame f. One gentle wave of deep to light orange, about
+ *  48 letters long, drifting along the title (one wave every 7 seconds): next letters and next
+ *  frames differ by only a few shades, so the fade reads as smooth, never as steps. The glow
+ *  passes over it. */
+export function titleShade(i: number, f: number, n: number): string {
+  const base = (1 + Math.sin(2 * Math.PI * (i / 48 - f / 28))) / 2
+  const wave = mixRgb(hexRgb('#e35126'), hexRgb('#ec8b6f'), base)
+  return rgbHex(mixRgb(wave, hexRgb(GLOW_COLOR), glowAt(i, f, n)))
 }
 // Everything in the box is Clawd's orange: done, needs-you and stuck too. The one other hue is
 // the grey of a stopped job. (Ghostty puts orange in ANSI slot 2, so no named colors here.)
@@ -539,6 +555,57 @@ export function pickTier(boxCap: number, canFull: boolean, steps = 2): Tier {
   return 'line'
 }
 
+/** Which steps the box shows in `room` rows, the window sliding to keep the step at `anchor` in view
+ *  (one step above it when there is room). When steps are hidden, a row at the top counts those
+ *  above and a row at the bottom those below, taking a step's row each, so the box never grows. */
+export function stepWindow(total: number, anchor: number, room: number): { start: number; end: number; above: number; below: number } {
+  if (room >= total) return { start: 0, end: total, above: 0, below: 0 }
+  const at = Math.max(0, Math.min(anchor, total - 1))
+  const place = (k: number) => {
+    const start = Math.max(0, Math.min(at - (k >= 3 ? 1 : 0), total - k))
+    return { start, end: start + k }
+  }
+  // Fewer steps for each marker row the window needs, until it settles
+  let k = Math.max(1, room)
+  for (let i = 0; i < 3; i++) {
+    const w = place(k)
+    const marks = (w.start > 0 ? 1 : 0) + (w.end < total ? 1 : 0)
+    const next = Math.max(1, room - marks)
+    if (next === k) break
+    k = next
+  }
+  const { start, end } = place(k)
+  let above = start > 0 ? 1 : 0
+  let below = end < total ? 1 : 0
+  // Too few rows for every marker: the count of steps still to come stays first
+  const spare = room - k
+  if (above + below > spare) {
+    if (below && spare >= 1) above = 0
+    else if (above && spare >= 1) below = 0
+    else above = below = 0
+  }
+  return { start, end, above: above ? start : 0, below: below ? total - end : 0 }
+}
+
+/** The whole checklist as plain lines, printed once into the conversation by /clawd-view steps. */
+export function stepsText(c: { title: string; phase: string; tasks: { name: string; status: string; percent: number; hasReported?: boolean }[] } | null): string {
+  if (c === null || c.tasks.length === 0) return 'No checklist yet. It appears once Claude starts a job.'
+  const total = c.tasks.length
+  const done = c.tasks.filter(t => t.status === 'done').length
+  const activeAt = c.tasks.findIndex(t => t.status === 'active')
+  const head = c.phase === 'done' || done === total
+    ? `✓ ${c.title} · all ${total} steps done`
+    : `✻ ${c.title} · step ${activeAt !== -1 ? activeAt + 1 : Math.min(total, done + 1)} of ${total}`
+  const rows = c.tasks.map(t =>
+    t.status === 'done' || c.phase === 'done'
+      ? `  ✓ ${t.name}`
+      : t.status === 'active'
+        ? `  ● ${t.name} · ${t.hasReported ? `${t.percent}%` : 'working'}`
+        : `  ○ ${t.name}`,
+  )
+  return [head, ...rows].join('\n')
+}
+
 /** The rows a drawn tree takes, counted the way the terminal lays it out: a column adds its
  *  children's rows, a row takes its tallest child, a border adds 2, margins and padding add theirs,
  *  and a set height wins. Anything it cannot read counts as nothing. */
@@ -790,7 +857,7 @@ export function registerClawdView(on: On): void {
     await $.command.register({
       name: 'clawd-view',
       description: 'Turn Clawd View on or off: a plain-English checklist of each step, with the technical details hidden',
-      argumentHint: 'on|off|panel|help',
+      argumentHint: 'on|off|steps|panel|help',
     })
     // A reload cancels the 5-second fold of a finished card: fold it now, so nothing animates forever
     await edit($, c => (c !== null && c.phase === 'done' && !c.isCollapsed ? { ...c, isCollapsed: true } : c))
@@ -816,7 +883,9 @@ export function registerClawdView(on: On): void {
       return { text: 'Clawd View panel opened.' }
     }
     if (arg === 'help') return { text: GUIDE }
-    if (arg !== '' && arg !== 'on' && arg !== 'off') return { text: 'Use /clawd-view on, /clawd-view off, /clawd-view panel, /clawd-view help, or /clawd-view to switch it.' }
+    // Plain text, printed once: it scrolls with the conversation and never redraws
+    if (arg === 'steps') return { text: stepsText(await read($, checklist)) }
+    if (arg !== '' && arg !== 'on' && arg !== 'off') return { text: 'Use /clawd-view on, /clawd-view off, /clawd-view steps, /clawd-view panel, /clawd-view help, or /clawd-view to switch it.' }
     const value = arg === '' ? !(await read($, enabled)) : arg === 'on'
     await setEnabled($, value)
 
@@ -995,13 +1064,27 @@ export function registerClawdView(on: On): void {
       return { result: `Progress noted: ${percent}%.` }
     }
 
-    // For the news line: what each helper is doing, and the files this job changed (from any loop)
+    // For the news line: what each agent is doing, and the files this job changed (from any loop)
     const job = await read($, checklist)
     if (job !== null && isLive(job)) {
       await noteJob($, job.startedAt)
       if (e.agentId !== undefined) {
         const seen = news.helpers.get(e.agentId)
-        news.helpers.set(e.agentId, { description: seen?.description ?? '', status: seen?.status ?? 'running', doing: doingOf(tool) })
+        const at = await $.clock.now()
+        const target = agentTarget(input)
+        const isNew = seen?.tool !== tool || seen?.target !== target
+        news.helpers.set(e.agentId, {
+          ...seen,
+          description: seen?.description ?? '',
+          status: seen?.status ?? 'running',
+          doing: doingOf(tool),
+          tool,
+          target,
+          uses: (seen?.uses ?? 0) + 1,
+          startedAt: seen?.startedAt ?? at,
+          doingSince: isNew ? at : (seen?.doingSince ?? at),
+          listed: seen?.listed ?? false,
+        })
       }
       const path = input['file_path'] ?? input['notebook_path']
       if ((tool === 'Edit' || tool === 'Write' || tool === 'NotebookEdit') && typeof path === 'string' && path) news.files.add(path)
@@ -1114,9 +1197,9 @@ export function registerClawdView(on: On): void {
 
   on('turn.complete', async ($, e, next) => {
     if (e.agentId !== undefined) {
-      // A helper's turn ending: finished, in case the list no longer holds it
+      // An agent's turn ending: finished, in case the list no longer holds it
       const seen = news.helpers.get(e.agentId)
-      if (seen?.status === 'running') news.helpers.set(e.agentId, { ...seen, status: 'completed' })
+      if (seen?.status === 'running') news.helpers.set(e.agentId, { ...seen, status: 'completed', endedAt: seen.endedAt ?? (await $.clock.now()) })
       return next(e)
     }
     // The turn's replies are in the transcript now: read it back as the authority
@@ -1308,8 +1391,8 @@ async function drawCard(
             {c.title}
           </Text>
         ) : (
-          [...c.title].map((ch, i) => (
-            <Text key={`t${i}`} bold color={gradient(i, frame)}>
+          [...c.title].map((ch, i, all) => (
+            <Text key={`t${i}`} bold color={titleShade(i, frame, all.length)}>
               {ch}
             </Text>
           ))
@@ -1374,7 +1457,7 @@ async function drawCard(
     // The side panel and the desktop card always have a full block: two columns when wide, else
     // every fact on its own line
     const fullInfo = drawn === null ? null : (drawn.full ?? (isRoomy ? drawn.stacked : null))
-    // The news line under the steps: helpers, warnings and the finished job's summary, one at a time
+    // The news line under the steps: agents, warnings and the finished job's summary, one at a time
     const newsNow = await currentNews($, c, now, isAnimated(c), isDesktop ? STATUS_TICK_MS : NEWS_MS, isRoomy)
     // The tier depends on the terminal's size and the plan's length, never on the job's state.
     // On the main screen: the steps line and at least one step in the border, else fewer rows.
@@ -1461,8 +1544,11 @@ async function drawCard(
     // The step being worked on, else the first one not done yet
     const open = c.tasks.findIndex(t => t.status !== 'done')
     const anchor = activeAt !== -1 ? activeAt : open === -1 ? total : open
-    // One step above the anchor when there's room for it, else the anchor first
-    const start = Math.max(0, Math.min(anchor - (room >= 3 ? 1 : 0), total - room))
+    // One step above the anchor when there's room for it, else the anchor first; steps left out
+    // are counted in a row at the top and the bottom, so a short window never hides them silently
+    const win = stepWindow(total, anchor, room)
+    const start = win.start
+    const hiddenDone = c.tasks.slice(0, win.above).every(t => t.status === 'done' || c.phase === 'done')
 
     // Each column in a box of its own fixed width, not padded with spaces: the desktop app draws
     // in a font whose letters differ in width, where only boxes line the bars up; the terminal
@@ -1495,7 +1581,26 @@ async function drawCard(
       )
     const nameColumn = 2 + nameWidth + 2
 
-    const rows = c.tasks.slice(start, start + room).map((t, offset) => {
+    const plural = (n: number) => `${n} step${n === 1 ? '' : 's'}`
+    const aboveRow = win.above > 0 ? (
+      <Box key="above" flexDirection="row">
+        <Text wrap="truncate-end">
+          {hiddenDone
+            ? <Text color={DONE_ORANGE}>✓ {plural(win.above)} done</Text>
+            : <Text dimColor>↑ {plural(win.above)} above</Text>}
+        </Text>
+      </Box>
+    ) : null
+    const belowRow = win.below > 0 ? (
+      <Box key="below" flexDirection="row">
+        <Text wrap="truncate-end">
+          <Text color={CARD_ORANGE}>+ </Text>
+          <Text dimColor>{win.below} more step{win.below === 1 ? '' : 's'}</Text>
+        </Text>
+      </Box>
+    ) : null
+
+    const rows = c.tasks.slice(start, win.end).map((t, offset) => {
       const index = start + offset
       if (t.status === 'done' || c.phase === 'done') {
         return (
@@ -1553,6 +1658,57 @@ async function drawCard(
       )
     })
 
+    // The agent line: the model's badge (it breathes while the agent works), the agent's name in
+    // its kind's color, what it is doing typed in as it starts, and its tokens and time on the
+    // right. The desktop card redraws only on change, so there it holds still and shows it whole
+    // Named `ag`, not `h`: `h` is the JSX factory here
+    const agentRow = (ag: NewsHelper, place: string | undefined) => {
+      const model = ag.model ?? 'model'
+      const modelColor = MODEL_COLORS[model] ?? OTHER_MODEL_COLOR
+      const isLive = ag.status === 'running'
+      const moves = !isDesktop && isAnimated(c)
+      const breath = moves && isLive ? (Math.sin(frame / 4) * 0.5 + 0.5) * 0.35 : 0
+      const badge =
+        ag.status === 'completed' ? { text: ` ${model} ✓ `, bg: AGENT_DONE, ink: BADGE_INK }
+          : ag.status === 'failed' ? { text: ` ${model} ✗ `, bg: AGENT_FAILED, ink: BADGE_INK }
+          : ag.status === 'killed' ? { text: ` ${model} ■ `, bg: AGENT_STOPPED, ink: '#eadfd9' }
+          : ag.status === 'idle' || ag.status === 'waiting' ? { text: ` ${model} ‖ `, bg: mixHex(modelColor, BADGE_INK, 0.35), ink: BADGE_INK }
+          : { text: ` ${model} `, bg: mixHex(modelColor, '#fff5f0', breath), ink: BADGE_INK }
+      // Its own name, else the few words Claude gave it, else its kind
+      const name = ag.name?.trim() || ag.description?.trim() || ag.kind?.trim() || 'agent'
+      const action = agentAction(ag)
+      // About 4 letters a frame, from when this action began
+      const typedTo = moves && isLive && ag.doingSince !== undefined ? Math.max(0, Math.floor((now - ag.doingSince) / FRAME_MS) * 4) : action.length
+      const shown = [...action].slice(0, typedTo).join('')
+      const caret = moves && isLive ? (frame % 4 < 2 ? '▌' : ' ') : ''
+      const tokens = ag.tokens ? `↑ ${agentTokens(ag.tokens)}` : ''
+      const rest = [
+        ...(ag.startedAt !== undefined ? [formatDuration((ag.endedAt ?? now) - ag.startedAt)] : []),
+        ...(place ? [place] : []),
+      ].join(' · ')
+      return (
+        <Box key="news" flexDirection="row">
+          <Box flexShrink={1} flexGrow={1}>
+            <Text wrap="truncate-end">
+              <Text backgroundColor={badge.bg} color={badge.ink} bold>{badge.text}</Text>
+              <Text> </Text>
+              <Text color={AGENT_COLORS[ag.kind ?? ''] ?? OTHER_AGENT_COLOR} bold>{name}</Text>
+              <Text color={ag.status === 'failed' ? AGENT_FAILED : undefined} dimColor={!isLive && ag.status !== 'failed'}>{` ${shown}`}</Text>
+              {caret ? <Text color={CARD_ORANGE}>{caret}</Text> : null}
+            </Text>
+          </Box>
+          {tokens || rest ? (
+            <Box flexShrink={0} marginLeft={2}>
+              <Text>
+                {tokens ? <Text color={CARD_ORANGE} bold>{tokens}</Text> : null}
+                {rest ? <Text dimColor>{tokens ? ` · ${rest}` : rest}</Text> : null}
+              </Text>
+            </Box>
+          ) : null}
+        </Box>
+      )
+    }
+
     // Compact: the headline and the step rows only, no steps line, when the info block has no room
     const body = (
       <Box flexDirection="column" flexGrow={1} flexShrink={1}>
@@ -1574,8 +1730,12 @@ async function drawCard(
             )}
           </Box>
         ) : null}
+        {aboveRow}
         {rows}
-        {newsRows && newsNow ? (
+        {belowRow}
+        {newsRows && newsNow?.item.agent ? (
+          agentRow(newsNow.item.agent, newsNow.place)
+        ) : newsRows && newsNow ? (
           <Box key="news" flexDirection="row">
             <Box flexShrink={1} flexGrow={1}>
               <Text wrap="truncate-end">
@@ -1618,7 +1778,7 @@ async function runningAgents($: Engine): Promise<number> {
   }
 }
 
-// --- The news line: one row under the steps that cycles through what helpers do, warnings and,
+// --- The news line: one row under the steps that cycles through what agents do, warnings and,
 // once done, a short summary ------------------------------------------------------------------
 
 // How long each piece of news stays: the terminal's frame clock moves it on; the desktop card
@@ -1627,11 +1787,86 @@ const NEWS_MS = 4_000
 // Past this many items the dots become "3/9"
 const NEWS_DOTS_MAX = 6
 
-export type NewsHelper = { description: string; status: string; doing?: string }
-export type NewsItem = { mark: string; text: string; detail?: string; isAlert: boolean }
+export type NewsHelper = {
+  description: string
+  status: string
+  doing?: string
+  // What the agent is called, its kind (Explore, Plan…) and the model it runs on, when known
+  name?: string
+  kind?: string
+  model?: string
+  // Its context in tokens at its last step, its tool calls so far, the tool and what it works on
+  tokens?: number
+  uses?: number
+  tool?: string
+  target?: string
+  // When it was first seen, when its current action began, and when it stopped
+  startedAt?: number
+  doingSince?: number
+  endedAt?: number
+  // False until Claude Code's agent list names it: the engine's own forks (compaction, memory)
+  // run loops with ids no list names, and they are no agents of the person's
+  listed?: boolean
+}
+export type NewsItem = { mark: string; text: string; detail?: string; isAlert: boolean; agent?: NewsHelper }
 
-// The job on screen's helpers and changed files, keyed by when it started, so a new job starts
-// clean. `before` holds the helpers already finished when it started: they are old news
+// The agent line: each model has one color, on its badge, and each kind of agent another, on its
+// name. Models are cool colors and agents warm ones, so the two never look alike
+export const MODEL_COLORS: Record<string, string> = { haiku: '#5cc8e6', sonnet: '#6f9dff', opus: '#b48cff' }
+export const OTHER_MODEL_COLOR = '#9aa4b2'
+export const AGENT_COLORS: Record<string, string> = { Explore: '#ff8fb8', Plan: '#f5c85a', 'general-purpose': '#f3e9df', 'code-reviewer': '#cfe86a' }
+export const OTHER_AGENT_COLOR = '#d9b48f'
+const AGENT_DONE = '#3fc06a'
+const AGENT_FAILED = '#ff5a36'
+const AGENT_STOPPED = '#6b5d56'
+const BADGE_INK = '#1b1512'
+
+/** A model id as the badge's word: "haiku", "sonnet", "opus", else the family name after "claude-". */
+export function shortModel(id: string | undefined): string | undefined {
+  if (!id) return undefined
+  const known = /(haiku|sonnet|opus)/i.exec(id)
+  if (known) return known[1]!.toLowerCase()
+  const family = /^claude-([a-z]+)/i.exec(id)
+  return family ? family[1]!.toLowerCase() : undefined
+}
+
+/** What a tool call works on, in a few characters: a file's name, a search, a command's first word. */
+export function agentTarget(input: Record<string, unknown>): string {
+  const str = (k: string) => (typeof input[k] === 'string' ? (input[k] as string) : '')
+  const path = str('file_path') || str('notebook_path')
+  if (path) return path.split('/').pop() ?? path
+  if (str('pattern')) return str('pattern')
+  if (str('command')) return str('command').trim().split(/\s+/).slice(0, 2).join(' ')
+  if (str('url')) return str('url').replace(/^https?:\/\//, '').split('/')[0] ?? ''
+  if (str('query')) return str('query')
+  return ''
+}
+
+/** Tokens, short: 940, 12.4k, 184k, 1.2M. */
+export function agentTokens(n: number): string {
+  if (n < 1000) return String(n)
+  if (n < 100_000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`
+  return shortCount(n)
+}
+
+/** What the agent is doing, in plain words: "reading checkout.ts", "thinking", "waiting for you". */
+export function agentAction(h: NewsHelper): string {
+  if (h.status === 'completed') return 'finished'
+  if (h.status === 'failed') return 'failed'
+  if (h.status === 'killed') return 'stopped'
+  if (h.status === 'idle' || h.status === 'waiting') return 'waiting'
+  if (h.status === 'pending') return 'getting started'
+  if (!h.tool) return h.doing ?? 'getting started'
+  const verb = h.doing ?? doingOf(h.tool)
+  if (!h.target) return verb
+  // "reading files" becomes "reading checkout.ts"
+  return `${verb.replace(/ (files|the code|the web|a command)$/, '')} ${h.target}`
+}
+
+const mixHex = (a: string, b: string, t: number) => rgbHex(mixRgb(hexRgb(a), hexRgb(b), t))
+
+// The job on screen's agents and changed files, keyed by when it started, so a new job starts
+// clean. `before` holds the agents already finished when it started: they are old news
 const news = {
   jobAt: -1,
   before: new Set<string>(),
@@ -1651,7 +1886,7 @@ async function noteJob($: Engine, jobAt: number): Promise<void> {
   news.before = new Set(list.filter(a => a.status !== 'running' && a.status !== 'idle').map(a => a.id))
 }
 
-/** What a tool call says a helper is doing, in Clawd's words. */
+/** What a tool call says an agent is doing, in Clawd's words. */
 export function doingOf(tool: string): string {
   if (tool === 'Read') return 'reading files'
   if (tool === 'Edit' || tool === 'Write' || tool === 'NotebookEdit') return 'editing files'
@@ -1677,38 +1912,40 @@ export function newsItems(p: {
   if (p.contextPct !== undefined && p.contextPct > STATUS_HIGH_AT) {
     alerts.push({ mark: '⚠', text: `Context is ${p.contextPct}% full`, detail: 'older messages get summed up soon', isAlert: true })
   }
-  const name = (h: NewsHelper) => h.description.trim() || 'A helper'
-  const failed = p.helpers.filter(h => h.status === 'failed')
-  const stopped = p.helpers.filter(h => h.status === 'killed')
-  const finished = p.helpers.filter(h => h.status === 'completed')
+  const name = (h: NewsHelper) => h.name?.trim() || h.description?.trim() || h.kind?.trim() || 'An agent'
+  const agents = p.helpers.filter(h => h.listed !== false)
+  const failed = agents.filter(h => h.status === 'failed')
+  const stopped = agents.filter(h => h.status === 'killed')
+  const finished = agents.filter(h => h.status === 'completed')
   const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`
   const fileNames = [...p.files].map(f => f.split('/').pop() ?? f)
 
   if (p.isDone) {
     const parts = [
       ...(fileNames.length ? [`Changed ${plural(fileNames.length, 'file')}`] : []),
-      ...(finished.length ? [`${plural(finished.length, 'helper')} pitched in`] : []),
+      ...(finished.length ? [`${plural(finished.length, 'agent')} pitched in`] : []),
       ...(failed.length ? [`${failed.length} failed`] : []),
     ]
+    const total = agents.reduce((sum, h) => sum + (h.tokens ?? 0), 0)
+    if (parts.length && total > 0) parts.push(`↑ ${agentTokens(total)}`)
     const summary: NewsItem[] = parts.length ? [{ mark: failed.length ? '✗' : '✓', text: parts.join(' · '), isAlert: failed.length > 0 }] : []
     return [...summary, ...alerts]
   }
 
   return [
-    ...failed.map(h => ({ mark: '✗', text: name(h), detail: 'failed', isAlert: true })),
+    ...failed.map(h => ({ mark: '✗', text: name(h), detail: 'failed', isAlert: true, agent: h })),
     ...alerts,
-    ...p.helpers.filter(h => h.status === 'running').map(h => ({ mark: '◐', text: name(h), detail: h.doing ?? 'getting started', isAlert: false })),
-    ...p.helpers.filter(h => h.status === 'idle').map(h => ({ mark: '◐', text: name(h), detail: 'waiting', isAlert: false })),
-    // Several finished helpers are one piece of news, not a row of look-alikes
-    ...(finished.length === 1
-      ? [{ mark: '✓', text: name(finished[0]!), detail: 'finished', isAlert: false }]
-      : finished.length > 1 ? [{ mark: '✓', text: `${finished.length} helpers finished`, isAlert: false }] : []),
-    ...stopped.map(h => ({ mark: '■', text: name(h), detail: 'stopped', isAlert: false })),
+    // Starting up counts as at work; a teammate waiting for a message, or one waiting on you, waits
+    ...agents.filter(h => h.status === 'running' || h.status === 'pending').map(h => ({ mark: '◐', text: name(h), detail: agentAction(h), isAlert: false, agent: h })),
+    ...agents.filter(h => h.status === 'idle' || h.status === 'waiting').map(h => ({ mark: '‖', text: name(h), detail: 'waiting', isAlert: false, agent: h })),
+    // Each finished agent gets its turn too, with its green badge
+    ...finished.map(h => ({ mark: '✓', text: name(h), detail: 'finished', isAlert: false, agent: h })),
+    ...stopped.map(h => ({ mark: '■', text: name(h), detail: 'stopped', isAlert: false, agent: h })),
   ]
 }
 
 /** The piece of news to show now, and where it sits among them ("● ○ ○" or "3/9"). */
-export function pickNews(items: NewsItem[], at: number, isMoving: boolean, period = NEWS_MS): { item: NewsItem; dots: string } | null {
+export function pickNews(items: NewsItem[], at: number, isMoving: boolean, period = NEWS_MS): { item: NewsItem; dots: string; place?: string } | null {
   if (items.length === 0) return null
   // A finished box stands still: the summary (or the first warning) stays
   const i = isMoving ? Math.floor(at / period) % items.length : 0
@@ -1717,19 +1954,39 @@ export function pickNews(items: NewsItem[], at: number, isMoving: boolean, perio
     : items.length <= NEWS_DOTS_MAX
       ? items.map((_, k) => (k === i ? '●' : '○')).join(' ')
       : `${i + 1}/${items.length}`
-  return { item: items[i]!, dots }
+  return { item: items[i]!, dots, ...(items.length > 1 ? { place: `${i + 1}/${items.length}` } : {}) }
 }
 
-/** The news line's item for this job now, reading the helpers' list as it stands. */
+/** The news line's item for this job now, reading the agents' list as it stands. */
 // Warnings alone never open the line on the main screen: a reading arriving mid-task would make the
 // box a row taller, and the stats' bars already turn deep orange past 80%. They join news already
 // showing there, and always show on the desktop card and the side panel
 async function currentNews($: Engine, c: Checklist, at: number, isMoving: boolean, period: number, canWarnAlone: boolean) {
   await noteJob($, c.startedAt)
-  for (const a of await $.agent.list().catch(() => [])) {
+  const list = await $.agent.list().catch(() => null)
+  // An agent that has left Claude Code's list is no longer at work: it shows as finished, never
+  // as running forever. Only when the list was read, not when reading it failed
+  if (list !== null) {
+    const ids = new Set(list.map(a => a.id))
+    for (const [id, h] of news.helpers) {
+      const isOpen = h.status === 'running' || h.status === 'pending' || h.status === 'idle' || h.status === 'waiting'
+      if (h.listed && isOpen && !ids.has(id)) news.helpers.set(id, { ...h, status: 'completed', endedAt: h.endedAt ?? at })
+    }
+  }
+  for (const a of list ?? []) {
     if (news.before.has(a.id)) continue
     const seen = news.helpers.get(a.id)
-    news.helpers.set(a.id, { description: a.description || a.name || a.type, status: a.status, doing: seen?.doing })
+    const isOver = a.status === 'completed' || a.status === 'failed' || a.status === 'killed'
+    news.helpers.set(a.id, {
+      ...seen,
+      description: a.description || a.name || a.type,
+      name: a.name || undefined,
+      kind: a.type || undefined,
+      status: a.status,
+      startedAt: seen?.startedAt ?? at,
+      endedAt: isOver ? (seen?.endedAt ?? at) : undefined,
+      listed: true,
+    })
   }
   const { isOn, u, readings, t } = await readStatus($)
   const contextPct = u?.contextPercent
@@ -1825,7 +2082,7 @@ const WELCOME_TIP = 'Clawd View is on. For the full view keep your window at lea
 const GUIDE = [
   '**Clawd View: getting the best view**',
   '',
-  'Everything at the bottom of the terminal (the box, Clawd, the prompt and the footer) has to fit in your window. If it gets taller than the window, the terminal can\'t erase the part that scrolled off, and you see broken copies of the box. So the box trims itself in smaller windows: steps always come first, and the stats show only when they fit in full.',
+  'Everything at the bottom of the terminal (the box, Clawd, the prompt and the footer) has to fit in your window. If it gets taller than the window, the terminal can\'t erase the part that scrolled off, and you see broken copies of the box. So the box trims itself in smaller windows: steps always come first, and the stats show only when they fit in full. When not every step fits, a line at the top counts the finished steps and a line at the bottom counts the ones still to come; `/clawd-view steps` prints the whole list.',
   '',
   '| Window size | What you get |',
   '|---|---|',
@@ -1844,6 +2101,7 @@ const GUIDE = [
   '- `/clawd-stats`: print the full stats into the conversation',
   '- `/clawd-status on` or `off`: show or hide the stats in the box',
   '- `/clawd-view on` or `off`: turn Clawd View on or off',
+  '- `/clawd-view steps`: print the whole checklist into the conversation, for when a short window hides some steps',
   '- `/clawd-view panel`: open the box as a side panel (terminal fullscreen, or the desktop app)',
   '- `/clawd-view help`: show this guide',
 ].join('\n')
@@ -2649,6 +2907,15 @@ function registerStatus(on: On): void {
     }
     const result = yield* next(e)
     const used = result.usage
+    if (e.agentId) {
+      // The agent line: its model, and its context at this step (what Claude Code's own agent count shows)
+      const job = await read($, checklist)
+      if (job !== null && isLive(job)) await noteJob($, job.startedAt)
+      const seen = news.helpers.get(e.agentId)
+      const model = shortModel(e.model) ?? seen?.model
+      const tokens = used ? used.input_tokens + used.cache_read_input_tokens + used.cache_creation_input_tokens + used.output_tokens : seen?.tokens
+      news.helpers.set(e.agentId, { description: '', status: 'running', listed: false, ...seen, model, tokens, startedAt: seen?.startedAt ?? sentAt })
+    }
     if (used) {
       await addLive($, {
         input: used.input_tokens + used.cache_read_input_tokens + used.cache_creation_input_tokens,

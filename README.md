@@ -9,7 +9,7 @@ A checklist of every step, your usage at a glance, and Clawd acting out the work
 
 <p>
 <img alt="Claude Code mod" src="https://img.shields.io/badge/Claude_Code-mod-e8714e?style=flat-square&logo=claude&logoColor=white&labelColor=1a1512" />
-<img alt="Version 1.2.3" src="https://img.shields.io/badge/version-1.2.3-e8714e?style=flat-square&labelColor=1a1512" />
+<img alt="Version 1.4.1" src="https://img.shields.io/badge/version-1.4.1-e8714e?style=flat-square&labelColor=1a1512" />
 <img alt="Needs Claude Code 2.1.287 or later" src="https://img.shields.io/badge/Claude_Code-2.1.287%2B-e8714e?style=flat-square&labelColor=1a1512" />
 <img alt="Terminal and desktop app" src="https://img.shields.io/badge/works_in-terminal_%C2%B7_desktop_app-e8714e?style=flat-square&labelColor=1a1512" />
 <img alt="macOS, Linux and Windows" src="https://img.shields.io/badge/macOS_%C2%B7_Linux_%C2%B7_Windows-supported-e8714e?style=flat-square&labelColor=1a1512" />
@@ -44,7 +44,7 @@ A checklist of every step, your usage at a glance, and Clawd acting out the work
 <td width="33%" valign="top" align="center">
 <img src="docs/media/checklist.gif" width="100%" alt="The checklist filling in step by step" /><br/>
 <b>A checklist of every step</b><br/>
-<sub>Plain words, a progress bar for each step, and a news line for helpers</sub>
+<sub>Plain words, a progress bar for each step, and a news line for agents</sub>
 </td>
 <td width="33%" valign="top" align="center">
 <img src="docs/media/stats.gif" width="100%" alt="The stats under a finished job" /><br/>
@@ -130,9 +130,9 @@ He reads, searches, types on a tiny laptop and runs, with the file name beside h
 </tr>
 <tr>
 <td width="50%" valign="top">
-<img src="docs/media/helpers.gif" width="100%" alt="The news line under the steps showing a helper at work" />
-<h3>Helpers, at a glance</h3>
-When Claude sends helpers out, one quiet line under the steps says what they're doing and when they're done.
+<img src="docs/media/agents.gif" width="100%" alt="The agent line under the steps: a model badge, the agent's name, what it is doing, and its tokens and time" />
+<h3>Agents, at a glance</h3>
+When Claude sends agents out, one line under the steps shows each in turn: its model on a colored badge that breathes while it works, its name in the color of its kind, what it's doing as it happens, and its tokens (↑) and time. Models and kinds of agent each have their own colors, and the two never match. It stays one row however many agents run. <a href="#the-agent-line">How it works →</a>
 </td>
 <td width="50%" valign="top">
 <img src="docs/media/needs-you.gif" width="100%" alt="The Needs you badge on the checklist" />
@@ -218,13 +218,40 @@ Step 2 of 3                                                         33%
 
 | Part | What it shows |
 |---|---|
-| **The title** | A short plain-English name for your request. It reads "Your request" until the name arrives (see [Privacy and cost](#privacy-and-cost)) |
+| **The title** | A short plain-English name for your request. It reads "Your request" until the name arrives (see [Privacy and cost](#privacy-and-cost)). In the terminal a soft glow sweeps across it every few seconds while Claude works |
 | **The timer** | How long Claude has been working. When the job ends, the title says how long it took |
 | **Done** ✓ | The step is finished |
 | **Working** ● | The step Claude is on. Its bar shows a moving wave, or the percent once Claude reports one |
 | **Next** / **Up next** ○ | The step after it, then later steps |
 | **The top line** | Which step Claude is on and how far along the whole job is |
-| **The news line** | Under the steps: what helpers are doing, warnings, and a summary of the finished job |
+| **More steps** | In a short window, `✓ 3 steps done` at the top and `+ 2 more steps` at the bottom count the steps that don't fit. `/clawd-view steps` prints the whole list into the conversation |
+| **The news line** | Under the steps: each agent with its model, what it's doing, tokens and time (see [The agent line](#the-agent-line)); warnings; and a summary of the finished job |
+
+### The agent line
+
+When Claude sends agents out, the line under the steps shows them one at a time, about every 4 seconds:
+
+```
+ sonnet  copywriter editing hero.tsx▌                       ↑ 11.2k · 5s · 1/3
+```
+
+| Part | What it shows |
+|---|---|
+| **The badge** | The model the agent runs on. It gently brightens and dims while the agent works, turns green ✓ when it finishes, red ✗ if it fails, grey ■ if it's stopped, and shows ‖ while it waits |
+| **The name** | The agent's name, else the few words Claude gave it, else its kind |
+| **What it's doing** | Typed in as it happens: `reading checkout.ts`, `searching debounce`, `running npm test`, `thinking` |
+| **↑ tokens** | How much the agent is holding in its memory, as Claude Code counts it |
+| **Time, place** | How long it has run, and which agent of how many you're seeing |
+
+Each model has one color and each kind of agent another, and the two sets never share a color:
+
+| Models (the badge) | Kinds of agent (the name) |
+|---|---|
+| Haiku cyan · Sonnet blue · Opus violet · any other slate | Explore pink · Plan gold · General purpose cream · Code reviewer lime · any other tan |
+
+Only agents Claude Code lists show up, so its own background work (like summing up a long conversation) never appears as an agent. Agents started inside a workflow aren't listed, so they don't show either. In the desktop app the line holds still: no breathing or typing.
+
+When the job is done, the line sums it up: `✓ Changed 4 files · 3 agents pitched in · ↑ 48.2k`.
 
 ### What the headline can say
 
@@ -259,7 +286,7 @@ Clawd View gives Claude two small tools, `plan_steps` (lay out 1 to 8 plain-Engl
 
 Step names are cleaned up for you: file names, paths, code and commands are removed, and names are kept to 40 characters.
 
-Work done in the background or by helper agents doesn't change the steps; the news line under them reports on helpers instead.
+Work done in the background or by agents doesn't change the steps; the news line under them reports on agents instead.
 
 </details>
 
@@ -388,7 +415,7 @@ In the Code tab of the desktop app:
 
 <br/>
 
-Everything at the bottom of the terminal (the box, Clawd, the prompt and the footer) has to fit in your window. If it gets taller than the window, the terminal can't erase the part that scrolled off, and you see broken copies of the box. So the box trims itself in smaller windows: steps always come first, and the stats show only when they fit in full.
+Everything at the bottom of the terminal (the box, Clawd, the prompt and the footer) has to fit in your window. If it gets taller than the window, the terminal can't erase the part that scrolled off, and you see broken copies of the box. So the box trims itself in smaller windows: steps always come first, and the stats show only when they fit in full. When not every step fits, a line at the top counts the finished steps and a line at the bottom counts the ones still to come; `/clawd-view steps` prints the whole list.
 
 | Window size | What you get |
 |---|---|
@@ -411,6 +438,7 @@ While you type a `/` command, the box shrinks to one line so the command list ha
 |---|---|
 | `/clawd-view` | Switches Clawd View on or off |
 | `/clawd-view on` / `off` | On, or off to show every step again |
+| `/clawd-view steps` | Prints the whole checklist into the conversation, for when a short window hides some steps |
 | `/clawd-view panel` | Opens the box as a side panel (terminal fullscreen mode, or the desktop app) |
 | `/clawd-view help` | Shows a short guide in the conversation |
 | `/clawd-stats` | Prints the full stats, labeled with the time |

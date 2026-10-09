@@ -1,7 +1,7 @@
 {
   "name": "clawd-view",
   "displayName": "Clawd View",
-  "version": "1.2.3",
+  "version": "1.4.1",
   "description": "A calm, plain-English view of Claude Code: a step-by-step checklist above the prompt, usage stats when there's room, and Clawd the pixel mascot acting out each step. Tool calls and commands stay out of sight.",
   "author": {
     "name": "thedepegger",
