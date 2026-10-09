@@ -517,7 +517,7 @@ Here is exactly what it sends to a model, and what else it changes:
 
 Clawd's animations, music mode, chat and game are based on [Clawd Buddy](https://github.com/zhanbodev/clawd-buddy) by zhanbodev.
 
-Clawd View's own code is released under the [MIT licence](LICENSE). See the licence file for the note on Clawd's artwork.
+Clawd View's own code is released under the [MIT licence](LICENSE). See [NOTICE](NOTICE) for the note on Clawd and third-party material.
 
 <div align="center">
 
